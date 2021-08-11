@@ -1,0 +1,318 @@
+---
+title: "CRANvignette_statgenGWAS"
+author: "Bailey Kretzler"
+date: "8/10/2021"
+output: html_document
+---
+
+ALL REPHRASED FROM CRAN VINGETTE SOLELY FOR LEARNING PURPOSES
+
+[CRAN vingette](https://cran.r-project.org/web/packages/statgenGWAS/vignettes/GWAS.html)
+
+[Author Github](https://github.com/Biometris/statgenGWAS/) 
+
+
+
+```{r setup, include=FALSE}
+# ---------------------------------------------------------
+# First attempt with statgenGWAS package
+# 10 Aug 2021
+# Bailey M Kretzler
+# Data + EU DROPS project
+# ---------------------------------------------------------
+
+
+library(Rcpp) #if this acts up reinstall
+library(statgenGWAS)
+library(dplyr)
+
+#---------------------------------------------------------#
+#                 Getting data into gData form                      
+#---------------------------------------------------------#
+
+#---------------reading/inspecting data-------------------#
+
+
+# reads the data in 
+data("dropsMarkers") #assuming this contains gene markers
+data("dropsMap") # assuming this is a chrom map?
+data("dropsPheno") # ?????
+
+rownames(dropsMarkers)
+colnames(dropsMarkers)
+dropsMarkers[(1:10),(1:5)]
+  #lists number of recessive (?) alleles for each SNP in the columns
+  #row are genotypes
+  #basically gives you the layout of what is/isn't there
+
+rownames(dropsMap)
+colnames(dropsMap) 
+head(dropsMap)
+  # contains name of SNPs, chromosome#, position, + alleles
+  #rows are basically SNPs
+  # then the detainls of where they are located
+  #confused about the allele stuff
+
+
+rownames(dropsPheno)
+colnames(dropsPheno)
+head(dropsPheno)
+  #simply phenotypic data
+  
+
+
+```
+
+## gData data class
+
+gData stands for genomic data and is a class of data that can be used with the statgenGWAS package. And maybe others but I am entirely unsure about that. this is where you should start with your data. Multiple components of your data set can be input into this data class and data can be added later on. The function `createGData` will convert the data you give it to a gData object if you input it in the correct format. This code snippet demonstrates the use of this function.
+
+
+```{r}
+
+#------------------converting to gData-----------------------#
+
+#gDataDrops <- createGData(geno = dropsMarkers, 
+                          #map = dropsMap, 
+                          #pheno = dropsPhenoList)
+
+
+
+```
+
+
+### components of a gData object
+
+*Marker Map*
+
+this is where the markers or SNPs are on the chromosome. In the drops example, this data frame consists of SNP names, chromosome numbers, locations, and alleles for that SNP (change in base pair that occurs). Before puting this into createGData, the row names need to become the SNP names. chromosomes should be labeled as chr, position on the chromosome should be label pos. The code chunk below examines the marker map from the drops data and converts it to the appropriate format.
+
+
+```{r}
+### dropsMap ###
+
+#rownames <- snp names
+rownames(dropsMap) <- dropsMap$SNP.names
+
+#rename chromosome and position columns
+dropsMap = dropsMap %>% 
+  rename(chr = Chromosome, pos = Position)
+
+head(dropsMap)
+
+```
+
+
+
+*Marker matrix*
+
+The marker matrix is where the data concerning the SNPs/markers in each genotype is found. The columns are the SNPs/markers and the columns need to be the genotype. This will need to be renamed once you load in your data sets. This is done in the code chunk below. The markers need to be coded as numeric, if they are coded as characters use `codeMarkers()` to convert them.
+
+
+```{r}
+### dropsMarkers ###
+
+#make row names genotype    
+rownames(dropsMarkers) <- dropsMarkers[["Ind"]]
+
+#drop ind col
+dropsMarkers<- dropsMarkers[colnames(dropsMarkers)!= "Ind"]
+
+dropsMarkers[(1:10),(1:5)] #check -- looks good
+
+
+```
+
+
+*Phenotypic data*
+
+This is simply the phenotypic data that has been gathered on the genotypes you are examining. This will be input into pheno in the gdata object which is either a single or list of dataframes. The latter is useful in storing data from multiple trials or multiple years/generations. The first column needs to be genotype. You may need to use reorder to rearrange the columns. Below is an example of how to create the object that will be given to the createGData function and input into the gData object. This is put into a list form as it contains multiple trials.
+
+```{r}
+
+### dropsPheno ###
+
+#rename varietyID col
+dropsPheno <- dropsPheno %>%
+  rename(genotype = Variety_ID)
+
+head(dropsPheno)
+
+#convert relevant data to a list
+dropsPhenoList <- split(x = dropsPheno[c("genotype", "grain.yield", 
+                                         "grain.number", "seed.size",
+                                         "anthesis", "silking", 
+                                         "plant.height", "tassel.height",
+                                         "ear.height")], 
+                        f = dropsPheno[["Experiment"]])
+
+
+```
+
+
+*Kinship Matrix*
+
+
+A kinship matrix may also be added to the gData object that indicates how related genotypes are. The rows and columns will both be genotypes, the cells will be a variable indicated degree of relatedness. This is not done in the drops data so I have no example.
+
+
+
+
+*Further covariates*
+
+
+Store any other covariates in a covar data frame. Genotypes will be the row names and the covariates the column names - this can be any other data. 
+
+
+
+## Single Trait GWAS
+
+Paired with the code chunks above, the following code highlights the work flow for a single trat GWAS.
+
+The GWAS gives us the following information:
+
+* **chromosome number** - which chromosome the SNP is on
+* **chromosome position** - where it is on the chromosome (BP or CM)
+* **frequency of the allele** - how often the reference allele occurs for this SNP
+* **Pvalue** -  pvalue for the SNP, unsure what this means
+* **effect** - effect size of the SNP on the trait, how much influence it has over the trait
+* **effect standard error** - the standard error of the effect size that gives is the confidence interval
+* **Likelihood ratio based R2** - estimate of fit of the model - not sure what values deem "best fit"
+* **LOD score**  - likelihood that the SNP/gene is located close to other SNPs/genes for the same trait??? what is the LOD between? this SNP and any other SNP
+
+These are all valuable interpretations of the data that help us understand the importance and impact of the SNPs/genes.
+
+
+
+
+
+
+```{r}
+#------------------converting to gData-----------------------#
+
+gDataDrops <- createGData(geno = dropsMarkers, 
+                          map = dropsMap, 
+                          pheno = dropsPhenoList)
+    #geno is the markes data (sheet with SNPs), GT must be the row names
+    #map is obvs chrom map (where snps go), row names must be snp names
+    #pheno is phenotypic data and must be as a list
+    # i think..
+
+summary(gDataDrops)
+
+summary(gDataDrops, trials = "Mur13W")
+
+
+#---------------------------------------------------------#
+#                      Remove duplicate SNPs                      
+#---------------------------------------------------------#
+
+
+gDataDropsCL <- codeMarkers(gDataDrops, impute = FALSE, verbose = TRUE)
+
+summary(gDataDropsCL, trials = "Mur13W")
+
+
+
+
+#---------------------------------------------------------#
+#                      running the GWAS                      
+#---------------------------------------------------------#
+
+
+GWASdrops <- runSingleTraitGwas(gData = gDataDropsCL,
+                                trials = "Mur13W",
+                                traits = c("grain.yield", "anthesis"))
+
+print(head(GWASdrops$GWAResult$Mur13W))
+
+    #allel frequency will be whatever the reference allele is in the 
+    # gData object
+
+GWASdrops$signSnp
+
+```
+
+### Plotting the GWAS
+
+Now that we have and understand the GWAS results, we need to plot them for visual aid. There are many types of plots that may be used to display the results.
+
+*qq plots*
+
+This will plot the observed versus the expected -log10(P) values for a specific phenotypic trait. The expectations (Null hypothesis) is that no impact is observed. If the observed values deviate from the 1:1 line that is predicted, then lines will diverge. Generally inflation is obeserved and the line will diverge above the predicted 1:1 line. This is basically an estimate of the quality of the GWAS. Below is the qq plot for grain yield:
+
+
+
+```{r}
+
+
+## qq plot
+
+plot(GWASdrops, plotType = "qq", trait = "grain.yield")
+
+```
+
+
+*Manhattan Plots*
+
+These plots help to visualize which SNPs are significant for a specific phenotypic trait and which chromosomes they appear on. The plots axis' are thus -log10(p) and the chromosome numbers + positions. Significant SNPs are marked with a different color if they fall abovethe threshold. This can be changed to visualize a wider range of potentially significant SNPs. These plots can also be modified to focus on a specific chromosome + position, LOD value, or specific SNPs with known impacts. Below are examples for grain yield.
+
+
+```{r}
+
+#regular manhattan
+plot(GWASdrops, plotType = "manhattan", trait = "grain.yield")
+
+# adjusted threshold + chr #
+plot(GWASdrops, plotType = "manhattan", trait = "grain.yield",
+     yThr = 4, chr = 6:8)
+
+#modifying chro position
+plot(GWASdrops, plotType = "manhattan", trait = "grain.yield", 
+     yThr = 4, chr = 6, startPos = 0, endPos = 6e7)
+
+
+#adjusted lod value - decrease # SNPs on plot
+# SNPs with LOD lower than set value, only 5% will be plotted
+
+plot(GWASdrops, plotType = "manhattan", trait = "grain.yield", lod = 3)
+
+
+#SNPs with known effects
+plot(GWASdrops, plotType = "manhattan", trait = "grain.yield", 
+     effects = c("PZE-106021410", "PZE-105012420"))
+    # these 2 SNPs will be in different colours
+
+
+
+
+
+
+
+```
+
+
+*QTL plots*
+
+QTL plots help to understand where significant SNPs are on the chromosomes and what their effect size is. This is a plot that can be made for multiple traits allowing you to visualize if there is any overlap in QTLs and just how significant SNPs are spread throughout the genome. The size of the circle indicates the effect size of the SNP. These plots can be adjusted similar to the manhattan plots above. Below are some examples
+
+
+
+
+
+
+```{r}
+
+plot(GWASdrops, plotType = "qtl")
+
+
+#adjusting the threshold
+plot(GWASdrops, plotType = "qtl", yThr = 4)
+
+
+# normalize by the standard deviation of the phenotype
+plot(GWASdrops, plotType = "qtl", yThr = 4, normalize = TRUE)
+  #this normalizes the effect size to be relevant to the specific trait and comparable between the two
+
+
+```
